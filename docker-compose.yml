@@ -2,11 +2,14 @@ version: '3'
 
 services:
   chatwoot-langchain:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "5001:5000"
+      - "8080:8080"
     env_file:
       - .env
-    restart: unless-stopped
     volumes:
+      - ./data:/app/data
       - ./logs:/app/logs
+    restart: unless-stopped

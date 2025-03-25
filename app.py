@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Force production mode for Deepseek API
+os.environ["TEST_MODE"] = "false"
+os.environ["DEEPSEEK_API"] = "true"
+
 # Import our modules
 from utils.conversation_context import ConversationContextManager
 from handlers.chatwoot_handler import ChatwootHandler
@@ -28,8 +32,7 @@ def index():
     """Root endpoint for health check"""
     return jsonify({
         "status": "ok",
-        "message": "LangChain-Chatwoot integration is running",
-        "test_mode": os.getenv("TEST_MODE", "").lower() == "true"
+        "message": "LangChain-Chatwoot integration is running"
     })
 
 @app.route("/webhook", methods=["POST"])
@@ -41,6 +44,19 @@ def webhook():
         
         # Process webhook data
         result = langchain_integration.chatwoot_handler.process_webhook(webhook_data)
+        
+        # Handle the response format
+        if "response" in result:
+            # If response is a list or tuple, extract just the first element if it's a string
+            if isinstance(result["response"], (list, tuple)):
+                if len(result["response"]) > 0:
+                    if isinstance(result["response"][0], str):
+                        result["response"] = result["response"][0]
+                    else:
+                        result["response"] = str(result["response"][0])
+            # If response is a dict, convert it to a string
+            elif isinstance(result["response"], dict):
+                result["response"] = str(result["response"])
         
         return jsonify(result)
     except Exception as e:
@@ -58,6 +74,19 @@ def chatwoot_webhook():
         
         # Process webhook data
         result = langchain_integration.chatwoot_handler.process_webhook(webhook_data)
+        
+        # Handle the response format
+        if "response" in result:
+            # If response is a list or tuple, extract just the first element if it's a string
+            if isinstance(result["response"], (list, tuple)):
+                if len(result["response"]) > 0:
+                    if isinstance(result["response"][0], str):
+                        result["response"] = result["response"][0]
+                    else:
+                        result["response"] = str(result["response"][0])
+            # If response is a dict, convert it to a string
+            elif isinstance(result["response"], dict):
+                result["response"] = str(result["response"])
         
         return jsonify(result)
     except Exception as e:
@@ -96,4 +125,4 @@ if __name__ == "__main__":
     os.makedirs("./data/contexts", exist_ok=True)
     
     # Run the app
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)), debug=False)

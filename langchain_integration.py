@@ -19,8 +19,9 @@ from tools.unms_tool import UNMSTool
 # Import handlers
 from handlers.chatwoot_handler import ChatwootHandler
 
-# Import agent
-from agents.dual_role_agent import DualRoleAgent
+# Import agents
+from agents.sales_agent import SalesAgent
+from agents.support_agent import SupportAgent
 
 # Import LangChain components
 from langchain.agents import Tool
@@ -85,19 +86,22 @@ unms_tool = UNMSTool(
 
 # Wrap tool functions with reliability wrappers
 def wrap_erp_function(func, endpoint):
-    def wrapped(*args, **kwargs):
-        return erp_api.call_api(endpoint, func, *args, **kwargs)
-    return wrapped
+    """Wrap ERP function with reliability features"""
+    def wrapper(*args, **kwargs):
+        return erp_api.call(func, *args, **kwargs)
+    return wrapper
 
 def wrap_splynx_function(func, endpoint):
-    def wrapped(*args, **kwargs):
-        return splynx_api.call_api(endpoint, func, *args, **kwargs)
-    return wrapped
+    """Wrap Splynx function with reliability features"""
+    def wrapper(*args, **kwargs):
+        return splynx_api.call(func, *args, **kwargs)
+    return wrapper
 
 def wrap_unms_function(func, endpoint):
-    def wrapped(*args, **kwargs):
-        return unms_api.call_api(endpoint, func, *args, **kwargs)
-    return wrapped
+    """Wrap UNMS function with reliability features"""
+    def wrapper(*args, **kwargs):
+        return unms_api.call(func, *args, **kwargs)
+    return wrapper
 
 # Create LangChain tools with reliability wrappers
 # Sales tools
@@ -162,26 +166,26 @@ unms_tool_outage_info = Tool(
     description="Get information about current network outages, optionally filtered by location"
 )
 
-# Configure tools for each role
-tools_config = {
-    "sales": [
-        erp_tool_customer_info,
-        erp_tool_service_plans,
-        erp_tool_promotions,
-        erp_tool_plan_details,
-        erp_tool_order_status
-    ],
-    "support": [
-        splynx_tool_internet_status,
-        splynx_tool_payment_history,
-        unms_tool_device_status,
-        unms_tool_site_status,
-        unms_tool_outage_info
-    ]
-}
+# Create tools configuration
+sales_tools = [
+    erp_tool_customer_info,
+    erp_tool_service_plans,
+    erp_tool_promotions,
+    erp_tool_plan_details,
+    erp_tool_order_status
+]
 
-# Initialize the dual-role agent
-dual_role_agent = DualRoleAgent(tools_config)
+support_tools = [
+    splynx_tool_internet_status,
+    splynx_tool_payment_history,
+    unms_tool_device_status,
+    unms_tool_site_status,
+    unms_tool_outage_info
+]
+
+# Initialize the agents
+sales_agent = SalesAgent(sales_tools)
+support_agent = SupportAgent(support_tools)
 
 # Initialize Chatwoot handler
 chatwoot_handler = ChatwootHandler(
@@ -233,7 +237,7 @@ def extract_entity_ids(message: str) -> Dict[str, str]:
     
     return entity_ids
 
-def process_message(message: str, conversation_id: str, context_manager=None) -> Tuple[str, Dict[str, Any]]:
+def process_message(message: str, conversation_id: str, context_manager=None) -> str:
     """
     Process a message using the appropriate agent based on the conversation context.
     
@@ -243,95 +247,151 @@ def process_message(message: str, conversation_id: str, context_manager=None) ->
         context_manager: The conversation context manager
         
     Returns:
-        Tuple of (agent's response, metadata)
+        The agent's response as a string
     """
-    start_time = time.time()
-    metadata = {
-        "conversation_id": conversation_id,
-        "message_length": len(message),
-        "timestamp": time.time()
-    }
-    
-    # Extract entity IDs from the message
-    entity_ids = extract_entity_ids(message)
-    if entity_ids:
-        metadata["extracted_entities"] = entity_ids
-        logger.info(
-            "entities_extracted",
-            conversation_id=conversation_id,
-            entities=entity_ids
-        )
-    
-    # Determine the role based on the conversation context
-    role = "support"  # Default role
-    if context_manager:
-        role = context_manager.get_current_role(conversation_id)
-        metadata["role"] = role
-        
-        # Get the conversation context
-        context_data = context_manager.get_conversation_summary(conversation_id)
-        
-        # Add entity IDs to the context
-        if entity_ids:
-            if "entities" not in context_data:
-                context_data["entities"] = {}
-            context_data["entities"].update(entity_ids)
-            
-            # Update the context with the new entities
-            context_manager.update_entities(conversation_id, entity_ids)
-    else:
-        context_data = {"entities": entity_ids} if entity_ids else {}
-        metadata["role"] = role
-    
-    # Process the message with the dual-role agent
     try:
-        # Track conversation processing
-        logger.info(
-            "processing_message",
-            conversation_id=conversation_id,
-            role=role,
-            message_length=len(message),
-            context_data_keys=list(context_data.keys()) if context_data else []
-        )
+        print(f"Starting process_message with conversation_id: {conversation_id}")
+        start_time = time.time()
+        metadata = {
+            "conversation_id": conversation_id,
+            "message_length": len(message),
+            "timestamp": time.time()
+        }
         
-        # Process the message
-        response, agent_metadata = dual_role_agent.process_message(message, role, context_data)
+        # Extract entity IDs from the message
+        try:
+            print("Extracting entity IDs from message...")
+            entity_ids = extract_entity_ids(message)
+            print(f"Extracted entity_ids: {entity_ids}")
+            
+            # Convert all entity_ids values to strings to avoid unhashable type errors
+            string_entity_ids = {}
+            for key, value in entity_ids.items():
+                if isinstance(value, dict):
+                    # Convert nested dictionary to a flattened structure with string keys and values
+                    for k, v in value.items():
+                        string_entity_ids[f"{key}_{k}"] = str(v)
+                else:
+                    string_entity_ids[key] = str(value)
+                    
+            print(f"Converted to string_entity_ids: {string_entity_ids}")
+        except Exception as e:
+            print(f"Error extracting entity IDs: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            string_entity_ids = {}
         
-        # Update metadata with agent metadata
-        metadata.update(agent_metadata)
-        
-        # Calculate processing time
-        duration = time.time() - start_time
-        metadata["processing_time"] = duration
-        
-        # Log successful processing
-        logger.info(
-            "message_processed",
-            conversation_id=conversation_id,
-            role=role,
-            duration_seconds=duration,
-            response_length=len(response)
-        )
-        
-        return response, metadata
-        
+        # Determine the role based on the conversation context
+        try:
+            print("Determining role from conversation context...")
+            role = "support"  # Default role
+            if context_manager:
+                role = context_manager.get_current_role(conversation_id)
+                metadata["role"] = role
+                
+                # Get the conversation context
+                context_data = context_manager.get_conversation_summary(conversation_id)
+                print(f"Got context_data with keys: {list(context_data.keys() if context_data else [])}")
+                
+                # Add entity IDs to the context
+                if string_entity_ids:
+                    if "entities" not in context_data:
+                        context_data["entities"] = {}
+                    
+                    # Add each entity ID to the context - no need to process nested dictionaries
+                    # as we've already flattened them above
+                    for key, value in string_entity_ids.items():
+                        context_data["entities"][key] = value
+                    
+                    # Update the context with the new entities
+                    try:
+                        print(f"Updating context with entities: {string_entity_ids}")
+                        context_manager.update_entities(conversation_id, string_entity_ids)
+                    except Exception as e:
+                        print(f"Error updating context with entities: {str(e)}")
+                        import traceback
+                        print(traceback.format_exc())
+            else:
+                print("No context manager provided, using default role")
+                context_data = {
+                    "role": role,
+                    "entities": string_entity_ids
+                }
+                
+            print(f"Using role: {role}")
+            
+            logger.info(
+                "processing_message",
+                conversation_id=conversation_id,
+                role=role,
+                message_length=len(message),
+                context_data_keys=list(context_data.keys()) if context_data else []
+            )
+            
+            # Process the message
+            print(f"Calling agent.process_message with role={role}")
+            
+            # Add defensive copying to prevent modification of shared data structures
+            safe_context_data = {}
+            if context_data:
+                for key, value in context_data.items():
+                    if key == "entities" and isinstance(value, dict):
+                        # Create a new dictionary with string keys and values
+                        safe_context_data[key] = {str(k): str(v) for k, v in value.items()}
+                    elif isinstance(value, dict):
+                        # Create a deep copy of nested dictionaries
+                        safe_context_data[key] = {str(k): str(v) for k, v in value.items()}
+                    else:
+                        # For non-dictionary values, just use the string value
+                        safe_context_data[key] = str(value) if value is not None else ""
+            
+            print(f"Safe context data: {safe_context_data}")
+            
+            # Use the appropriate agent based on the role
+            if role == "sales":
+                response, agent_metadata = sales_agent.process_message(message, safe_context_data)
+            else:  # Default to support
+                response, agent_metadata = support_agent.process_message(message, safe_context_data)
+            
+            # Update metadata with agent metadata
+            if isinstance(agent_metadata, dict):
+                metadata.update(agent_metadata)
+            
+            # Calculate processing time
+            duration = time.time() - start_time
+            metadata["processing_time"] = duration
+            
+            logger.info(
+                "message_processed",
+                conversation_id=conversation_id,
+                role=role,
+                duration_seconds=duration,
+                response_length=len(response)
+            )
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error processing message: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            logger.error(
+                "message_processing_error",
+                conversation_id=conversation_id,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            
+            return f"I'm sorry, but I encountered an error while processing your request. Please try again or contact customer support for assistance."
+            
     except Exception as e:
-        # Log error
-        duration = time.time() - start_time
+        print(f"Unexpected error in process_message: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         logger.error(
-            "message_processing_error",
-            conversation_id=conversation_id,
-            role=role,
+            "unexpected_error",
             error=str(e),
-            error_type=type(e).__name__,
-            duration_seconds=duration
+            error_type=type(e).__name__
         )
         
-        # Update metadata with error information
-        metadata["error"] = str(e)
-        metadata["error_type"] = type(e).__name__
-        metadata["processing_time"] = duration
-        
-        # Return error message and metadata
-        error_message = f"I'm sorry, but I encountered an error while processing your request. Please try again or contact customer support for assistance."
-        return error_message, metadata
+        return "I'm sorry, but I encountered an unexpected error. Please try again later."

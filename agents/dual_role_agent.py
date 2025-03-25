@@ -2,19 +2,22 @@
 Dual-role agent implementation for handling both sales and support queries.
 """
 import os
-import uuid
 import time
-from typing import Dict, List, Any, Optional, Tuple
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import BaseTool, Tool
-from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
+import json
+import re
+from typing import Dict, List, Any, Tuple, Optional
+import hashlib
+import uuid
 
-# Import agent prompts
-from agent_prompts import get_system_prompt
+import langchain
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_deepseek import ChatDeepSeek
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain.agents.format_scratchpad.openai_tools import format_to_openai_tool_messages
+from langchain.agents.output_parsers.openai_tools import OpenAIToolsAgentOutputParser
+from langchain_core.runnables import RunnablePassthrough
 
-# Import reliability components
 from logger_config import logger, llm_metrics
 from reliability import LLMReliabilityWrapper
 from prometheus_metrics import track_request, track_conversation
@@ -23,11 +26,11 @@ from semantic_cache import semantic_cache
 # Check if we're in test mode
 TEST_MODE = (
     os.getenv("TEST_MODE", "").lower() == "true" or
-    os.getenv("OPENAI_API_KEY") in [None, "", "your_openai_api_key"]
+    os.getenv("DEEPSEEK_API_KEY") in [None, "", "your_deepseek_api_key"]
 )
 
 # Initialize reliability-enhanced LLM
-model_name = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 llm_wrapper = LLMReliabilityWrapper(
     model=model_name,
     cache_enabled=os.getenv("ENABLE_SEMANTIC_CACHE", "true").lower() == "true",
@@ -35,19 +38,22 @@ llm_wrapper = LLMReliabilityWrapper(
     fallback_response="I'm sorry, but I'm currently experiencing high demand. Please try again in a moment."
 )
 
-# Initialize OpenAI
-llm = ChatOpenAI(
-    openai_api_key=os.getenv("OPENAI_API_KEY", "test_key"),
+# Initialize Deepseek
+deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+# Remove 'Bearer ' prefix if present
+if deepseek_api_key.startswith("Bearer "):
+    deepseek_api_key = deepseek_api_key[7:]
+
+llm = ChatDeepSeek(
+    api_key=deepseek_api_key,
     temperature=0.3,
     model_name=model_name
 )
 
 class DualRoleAgent:
-    """
-    Agent that can handle both sales and support roles.
-    """
+    """Agent that can handle both sales and support roles."""
     
-    def __init__(self, tools_config: Dict[str, List[Tool]]):
+    def __init__(self, tools_config: Dict[str, List[Any]]):
         """
         Initialize the dual-role agent with tools for each role.
         
@@ -56,7 +62,6 @@ class DualRoleAgent:
         """
         self.tools_config = tools_config
         self.agent_graphs = {}
-        self.memory = MemorySaver()
         
         # Initialize agent graphs for each role
         for role, tools in tools_config.items():
@@ -68,7 +73,7 @@ class DualRoleAgent:
             tools_count={role: len(tools) for role, tools in tools_config.items()}
         )
     
-    def _create_agent_graph(self, role: str, tools: List[BaseTool]):
+    def _create_agent_graph(self, role: str, tools: List[Any]):
         """
         Create an agent graph for a specific role.
         
@@ -79,27 +84,19 @@ class DualRoleAgent:
         Returns:
             An initialized LangGraph agent
         """
-        # Create default context data with just the role
-        default_context_data = {
-            "role": role,
-            "sales_stage": "initial" if role == "sales" else None,
-            "support_issue_type": "general" if role == "support" else None,
-            "customer_info": {},
-            "entities": {}
-        }
+        # Create the agent with the appropriate tools and system prompt
+        system_prompt = f"You are a helpful assistant specializing in {role} for an ISP."
         
-        # Get the appropriate system prompt based on the role
-        system_prompt = get_system_prompt(role, default_context_data)
-        
-        # Create and return the agent graph
-        return create_react_agent(
+        # Create the agent
+        agent = create_openai_tools_agent(
             llm,
-            tools=tools,
-            prompt=system_prompt,
-            checkpointer=self.memory,
+            tools,
+            system_prompt
         )
+        
+        # Create the executor
+        return AgentExecutor(agent=agent, tools=tools)
     
-    @track_request(endpoint_name="process_message")
     def process_message(self, message: str, role: str, context_data: Optional[Dict] = None) -> Tuple[str, Dict[str, Any]]:
         """
         Process a message using the appropriate agent based on the role.
@@ -112,42 +109,47 @@ class DualRoleAgent:
         Returns:
             Tuple of (agent's response, metadata)
         """
+        # Start tracking the request
         start_time = time.time()
-        conversation_id = str(uuid.uuid4())
+        conversation_id = context_data.get("conversation_id", str(uuid.uuid4())) if context_data else str(uuid.uuid4())
+        track_request("process_message")
+        
+        # Initialize metadata
         metadata = {
             "conversation_id": conversation_id,
             "role": role,
             "message_length": len(message),
-            "context_data_provided": context_data is not None
+            "timestamp": time.time()
         }
-        
-        # Track conversation start
-        track_conversation("started")
-        
-        logger.info(
-            "processing_message",
-            conversation_id=conversation_id,
-            role=role,
-            message_length=len(message),
-            has_context_data=context_data is not None
-        )
         
         # Extract entities from message
         entity_ids = self.extract_entity_ids(message)
         if entity_ids:
+            # Convert all entity_ids values to strings to avoid unhashable type errors
+            string_entity_ids = {}
+            for key, value in entity_ids.items():
+                if isinstance(value, dict):
+                    # Convert nested dictionary to a flattened structure with string keys and values
+                    for k, v in value.items():
+                        string_entity_ids[f"{key}_{k}"] = str(v)
+                else:
+                    string_entity_ids[key] = str(value)
+            
             logger.info(
                 "entities_extracted",
                 conversation_id=conversation_id,
-                entities=entity_ids
+                entities=string_entity_ids
             )
-            metadata["extracted_entities"] = entity_ids
+            metadata["extracted_entities"] = string_entity_ids
             
             # Add extracted entities to context data
             if context_data is None:
                 context_data = {}
             if "entities" not in context_data:
                 context_data["entities"] = {}
-            context_data["entities"].update(entity_ids)
+            
+            # Update with string entities
+            context_data["entities"].update(string_entity_ids)
         
         # Check if role is valid
         if role not in self.agent_graphs:
@@ -164,7 +166,31 @@ class DualRoleAgent:
         # Check if we can use semantic cache for this query
         cache_key = f"{role}:{message}"
         if context_data:
-            cache_key += f":{hash(frozenset(context_data.items()))}"
+            # Create a stringified version of context_data for hashing
+            # Convert all values to strings to avoid unhashable type errors
+            try:
+                flatten_dict = {}
+                for k, v in context_data.items():
+                    if isinstance(v, dict):
+                        # For nested dictionaries, create a flattened representation
+                        for inner_k, inner_v in v.items():
+                            flatten_dict[f"{k}.{inner_k}"] = str(inner_v)
+                    else:
+                        flatten_dict[k] = str(v)
+                # Sort the items to ensure consistent cache keys
+                sorted_items = sorted(flatten_dict.items())
+                # Join key-value pairs with a delimiter
+                context_str = "|".join([f"{k}={v}" for k, v in sorted_items])
+                # Add hash of the stringified context to the cache key
+                cache_key += f":{hashlib.sha256(context_str.encode()).hexdigest()}"
+            except Exception as e:
+                # If there's any error in hash generation, we can safely ignore it
+                # as it's just for caching, and proceed without a context-specific cache
+                logger.warning(
+                    "cache_key_generation_error",
+                    error=str(e),
+                    error_type=type(e).__name__
+                )
         
         cached_response = semantic_cache.get(cache_key)
         if cached_response:
@@ -183,167 +209,76 @@ class DualRoleAgent:
             
             return cached_response["response"], metadata
         
-        # Get the agent graph for the specified role
-        agent_graph = self.agent_graphs[role]
+        logger.info(
+            "cache_miss",
+            cache="semantic_responses",
+            key=cache_key
+        )
         
-        # Update the system prompt with context data if provided
+        # Prepare the input for the agent
+        agent_input = {"input": message}
+        
+        # Add context data if available
         if context_data:
-            # Ensure role is included in context_data
-            if "role" not in context_data:
-                context_data["role"] = role
-                
-            # Add default values for required fields if not present
-            if role == "sales" and "sales_stage" not in context_data:
-                context_data["sales_stage"] = "initial"
-            elif role == "support" and "support_issue_type" not in context_data:
-                context_data["support_issue_type"] = "general"
-                
-            # Update the system prompt
-            system_prompt = get_system_prompt(role, context_data)
-            
-            # Create a unique thread ID for this conversation
-            thread_id = conversation_id
-            config = {"configurable": {"thread_id": thread_id}}
-            
-            # Create a human message from the input
-            input_message = HumanMessage(content=message)
-            
-            # Process the message
-            try:
-                # Stream the response and get the last message
-                response_messages = []
-                for event in agent_graph.stream(
-                    {"messages": [input_message]}, 
-                    config, 
-                    stream_mode="values"
-                ):
-                    response_messages = event["messages"]
-                
-                # Get the content of the last message
-                if response_messages and len(response_messages) > 0:
-                    response_content = response_messages[-1].content
-                    
-                    # Cache the response
-                    semantic_cache.set(cache_key, response_content, metadata)
-                    
-                    # Track conversation completion
-                    duration = time.time() - start_time
-                    track_conversation("completed", duration, len(response_messages))
-                    
-                    # Update metadata
-                    metadata["duration_seconds"] = duration
-                    metadata["message_count"] = len(response_messages)
-                    
-                    logger.info(
-                        "message_processed",
-                        conversation_id=conversation_id,
-                        role=role,
-                        duration_seconds=duration,
-                        message_count=len(response_messages),
-                        response_length=len(response_content)
-                    )
-                    
-                    return response_content, metadata
+            # Ensure all values in context_data are strings to avoid serialization issues
+            safe_context = {}
+            for k, v in context_data.items():
+                if isinstance(v, dict):
+                    # Handle nested dictionaries
+                    safe_context[k] = {str(inner_k): str(inner_v) for inner_k, inner_v in v.items()}
                 else:
-                    error_msg = "I'm sorry, I couldn't process your request."
-                    
-                    # Track conversation failure
-                    track_conversation("failed")
-                    
-                    logger.warning(
-                        "empty_response",
-                        conversation_id=conversation_id,
-                        role=role
-                    )
-                    
-                    return error_msg, metadata
-            except Exception as e:
-                error_msg = f"I'm sorry, I encountered an error while processing your request. Please try again or contact customer support for assistance."
-                
-                # Track conversation failure
-                track_conversation("failed")
-                
-                logger.error(
-                    "processing_error",
-                    conversation_id=conversation_id,
-                    role=role,
-                    error=str(e),
-                    error_type=type(e).__name__
-                )
-                
-                return error_msg, metadata
+                    safe_context[k] = str(v) if v is not None else ""
+            
+            agent_input["context"] = safe_context
         
-        # If no context data is provided, use a simpler approach
         try:
-            # Create a unique thread ID for this conversation
-            thread_id = conversation_id
-            config = {"configurable": {"thread_id": thread_id}}
+            # Call the agent
+            agent_response = self.agent_graphs[role].invoke(agent_input)
             
-            # Create a human message from the input
-            input_message = HumanMessage(content=message)
+            # Extract the response
+            response = agent_response.get("output", "I'm sorry, but I couldn't process your request.")
             
-            # Process the message
-            response_messages = []
-            for event in agent_graph.stream(
-                {"messages": [input_message]}, 
-                config, 
-                stream_mode="values"
-            ):
-                response_messages = event["messages"]
+            # Cache the response
+            semantic_cache.add(
+                cache_key,
+                {
+                    "response": response,
+                    "timestamp": time.time(),
+                    "role": role
+                }
+            )
             
-            # Get the content of the last message
-            if response_messages and len(response_messages) > 0:
-                response_content = response_messages[-1].content
-                
-                # Cache the response
-                semantic_cache.set(cache_key, response_content, metadata)
-                
-                # Track conversation completion
-                duration = time.time() - start_time
-                track_conversation("completed", duration, len(response_messages))
-                
-                # Update metadata
-                metadata["duration_seconds"] = duration
-                metadata["message_count"] = len(response_messages)
-                
-                logger.info(
-                    "message_processed",
-                    conversation_id=conversation_id,
-                    role=role,
-                    duration_seconds=duration,
-                    message_count=len(response_messages),
-                    response_length=len(response_content)
-                )
-                
-                return response_content, metadata
-            else:
-                error_msg = "I'm sorry, I couldn't process your request."
-                
-                # Track conversation failure
-                track_conversation("failed")
-                
-                logger.warning(
-                    "empty_response",
-                    conversation_id=conversation_id,
-                    role=role
-                )
-                
-                return error_msg, metadata
+            # Calculate duration
+            duration = time.time() - start_time
+            track_conversation("completed", duration)
+            
+            # Update metadata
+            metadata["duration_seconds"] = duration
+            metadata["cache_hit"] = False
+            
+            return response, metadata
+            
         except Exception as e:
-            error_msg = f"I'm sorry, I encountered an error while processing your request. Please try again or contact customer support for assistance."
-            
-            # Track conversation failure
-            track_conversation("failed")
-            
+            # Log error
             logger.error(
-                "processing_error",
+                "agent_error",
                 conversation_id=conversation_id,
                 role=role,
                 error=str(e),
                 error_type=type(e).__name__
             )
             
-            return error_msg, metadata
+            # Calculate duration
+            duration = time.time() - start_time
+            track_conversation("failed", duration)
+            
+            # Update metadata
+            metadata["duration_seconds"] = duration
+            metadata["error"] = str(e)
+            metadata["error_type"] = type(e).__name__
+            
+            # Return error message
+            return f"I'm sorry, but I encountered an error while processing your request: {str(e)}", metadata
     
     def extract_entity_ids(self, message: str) -> Dict[str, str]:
         """
@@ -355,28 +290,21 @@ class DualRoleAgent:
         Returns:
             Dictionary of entity IDs
         """
-        import re
-        
         entity_ids = {}
         
-        # Extract customer ID (e.g., CUS-12345)
-        customer_id_match = re.search(r'(?i)customer(?:\s+id)?[:\s]+([A-Z]+-\d+)', message)
+        # Extract customer ID
+        customer_id_match = re.search(r'customer[_\s]?id[:\s]+([a-zA-Z0-9]+)', message, re.IGNORECASE)
         if customer_id_match:
             entity_ids['customer_id'] = customer_id_match.group(1)
         
-        # Extract order ID (e.g., ORD-12345)
-        order_id_match = re.search(r'(?i)order(?:\s+id)?[:\s]+([A-Z]+-\d+)', message)
-        if order_id_match:
-            entity_ids['order_id'] = order_id_match.group(1)
+        # Extract ticket ID
+        ticket_id_match = re.search(r'ticket[_\s]?id[:\s]+([a-zA-Z0-9-]+)', message, re.IGNORECASE)
+        if ticket_id_match:
+            entity_ids['ticket_id'] = ticket_id_match.group(1)
         
-        # Extract device ID (e.g., DEV-12345)
-        device_id_match = re.search(r'(?i)device(?:\s+id)?[:\s]+([A-Z]+-\d+)', message)
+        # Extract device ID
+        device_id_match = re.search(r'device[_\s]?id[:\s]+([a-zA-Z0-9-]+)', message, re.IGNORECASE)
         if device_id_match:
             entity_ids['device_id'] = device_id_match.group(1)
-        
-        # Extract site ID (e.g., SITE-12345)
-        site_id_match = re.search(r'(?i)site(?:\s+id)?[:\s]+([A-Z]+-\d+)', message)
-        if site_id_match:
-            entity_ids['site_id'] = site_id_match.group(1)
         
         return entity_ids
