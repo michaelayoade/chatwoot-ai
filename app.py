@@ -46,6 +46,24 @@ def webhook():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/webhook/chatwoot", methods=["POST"])
+def chatwoot_webhook():
+    """Specific webhook endpoint for Chatwoot"""
+    try:
+        # Get webhook data
+        webhook_data = request.json
+        
+        # Log the incoming webhook data
+        print(f"Received Chatwoot webhook: {json.dumps(webhook_data)[:200]}...")
+        
+        # Process webhook data
+        result = langchain_integration.chatwoot_handler.process_webhook(webhook_data)
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in Chatwoot webhook: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/test", methods=["POST"])
 def test_endpoint():
     """Test endpoint for simulating conversations"""
@@ -78,4 +96,4 @@ if __name__ == "__main__":
     os.makedirs("./data/contexts", exist_ok=True)
     
     # Run the app
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)), debug=True)

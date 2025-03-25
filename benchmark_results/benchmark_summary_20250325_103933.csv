@@ -1,0 +1,6 @@
+Query Type,Success Rate,Avg Duration (ms),Median Duration (ms),P95 Duration (ms)
+simple,0.0%,495.38,48.03,1217.24
+complex,0.0%,23.45,21.82,34.38
+api_intensive,0.0%,36.85,39.28,45.53
+
+OVERALL,0.0%,185.23,34.38,1217.24

@@ -4,6 +4,7 @@ Chatwoot integration handler for processing webhooks and sending messages.
 import os
 import json
 import requests
+import time
 from typing import Dict, List, Any, Optional
 
 # Check if we're in test mode
@@ -61,14 +62,18 @@ class ChatwootHandler:
             from langchain_integration import process_message
             response = process_message(message_content, conversation_id, self.context_manager)
             
-            # Send the response back to the conversation
-            self.send_message(conversation_id, response)
+            # Send the response back to the conversation via Chatwoot API
+            reply_result = self.send_message(conversation_id, response)
+            
+            # Log the successful processing
+            print(f"Processed webhook for conversation {conversation_id}. Message: '{message_content}', Response: '{response}'")
             
             return {
                 "status": "success",
                 "conversation_id": conversation_id,
                 "message": message_content,
-                "response": response
+                "response": response,
+                "reply_result": reply_result
             }
         except Exception as e:
             print(f"Error processing webhook: {str(e)}")
@@ -86,13 +91,54 @@ class ChatwootHandler:
             "message_type": "outgoing"
         }
         
-        try:
-            response = requests.post(url, headers=self.headers, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"Error sending message: {str(e)}")
-            return {"error": f"Failed to send message: {str(e)}"}
+        # Add retry logic for API calls
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"Sending message to Chatwoot (attempt {attempt+1}/{max_retries}): {url}")
+                response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+                
+                # Log the response status
+                print(f"Chatwoot API response status: {response.status_code}")
+                
+                # Check if the request was successful
+                if response.status_code == 200 or response.status_code == 201:
+                    response_data = response.json()
+                    print(f"Successfully sent message to conversation {conversation_id}")
+                    return response_data
+                else:
+                    print(f"Error from Chatwoot API: Status {response.status_code}, Response: {response.text[:200]}")
+                    
+                    # If we've reached the max retries, raise an exception
+                    if attempt == max_retries - 1:
+                        response.raise_for_status()
+                    
+                    # Otherwise, wait and retry
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+            except requests.exceptions.Timeout:
+                print(f"Timeout connecting to Chatwoot API (attempt {attempt+1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    return {"error": "Timeout connecting to Chatwoot API"}
+                time.sleep(retry_delay)
+                retry_delay *= 2
+            except requests.exceptions.ConnectionError:
+                print(f"Connection error to Chatwoot API (attempt {attempt+1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    return {"error": "Connection error to Chatwoot API"}
+                time.sleep(retry_delay)
+                retry_delay *= 2
+            except Exception as e:
+                print(f"Error sending message: {str(e)}")
+                if attempt == max_retries - 1:
+                    return {"error": f"Failed to send message: {str(e)}"}
+                time.sleep(retry_delay)
+                retry_delay *= 2
+        
+        # If we get here, all retries failed
+        return {"error": "Failed to send message after multiple attempts"}
     
     def tag_conversation(self, conversation_id: str, tag_name: str) -> Dict:
         """Tag a conversation with a specific label"""

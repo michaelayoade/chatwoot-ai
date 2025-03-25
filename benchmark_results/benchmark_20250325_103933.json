@@ -1,0 +1,160 @@
+{
+  "timestamp": "20250325_103933",
+  "simple_queries": {
+    "individual_results": [
+      {
+        "query": "What internet plans do you offer?",
+        "status_code": 404,
+        "duration_ms": 1217.235803604126,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "How do I reset my password?",
+        "status_code": 404,
+        "duration_ms": 1173.3229160308838,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "When is my next bill due?",
+        "status_code": 404,
+        "duration_ms": 48.02989959716797,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "What's your customer service number?",
+        "status_code": 404,
+        "duration_ms": 19.304752349853516,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "Do you offer fiber internet?",
+        "status_code": 404,
+        "duration_ms": 18.995285034179688,
+        "response_length": 207,
+        "reliability_headers": {}
+      }
+    ],
+    "summary": {
+      "total_queries": 5,
+      "successful_queries": 0,
+      "success_rate": 0.0,
+      "min_duration_ms": 18.995285034179688,
+      "max_duration_ms": 1217.235803604126,
+      "avg_duration_ms": 495.3777313232422,
+      "median_duration_ms": 48.02989959716797,
+      "p95_duration_ms": 1217.235803604126
+    }
+  },
+  "complex_queries": {
+    "individual_results": [
+      {
+        "query": "I'm having trouble with my internet connection. It was working fine yesterday but now it's very slow and keeps disconnecting. I've tried restarting my router but it didn't help.",
+        "status_code": 404,
+        "duration_ms": 23.986101150512695,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "I want to upgrade my current plan to include more data and faster speeds. I currently have the basic package but need something better for working from home. What options do you have?",
+        "status_code": 404,
+        "duration_ms": 34.379005432128906,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "Can you explain the difference between your fiber plans and regular broadband? I'm trying to decide which one would be better for streaming and gaming.",
+        "status_code": 404,
+        "duration_ms": 19.75083351135254,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "I noticed an unusual charge on my last bill. It shows $49.99 for 'Premium Service' but I don't remember signing up for anything like that. Can you check what this is?",
+        "status_code": 404,
+        "duration_ms": 21.821975708007812,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "I'm moving to a new address next month and need to transfer my service. The new address is 123 Main Street, Anytown. What do I need to do to ensure I don't lose service during the move?",
+        "status_code": 404,
+        "duration_ms": 17.314910888671875,
+        "response_length": 207,
+        "reliability_headers": {}
+      }
+    ],
+    "summary": {
+      "total_queries": 5,
+      "successful_queries": 0,
+      "success_rate": 0.0,
+      "min_duration_ms": 17.314910888671875,
+      "max_duration_ms": 34.379005432128906,
+      "avg_duration_ms": 23.450565338134766,
+      "median_duration_ms": 21.821975708007812,
+      "p95_duration_ms": 34.379005432128906
+    }
+  },
+  "api_intensive_queries": {
+    "individual_results": [
+      {
+        "query": "Check my account balance for customer CUS-12345",
+        "status_code": 404,
+        "duration_ms": 40.9388542175293,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "What's my current data usage for this month? My account is CUS-23456",
+        "status_code": 404,
+        "duration_ms": 45.530080795288086,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "When is my next payment due for customer ID CUS-34567?",
+        "status_code": 404,
+        "duration_ms": 34.87992286682129,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "Show me my billing history for the past 6 months. Account: CUS-45678",
+        "status_code": 404,
+        "duration_ms": 39.277076721191406,
+        "response_length": 207,
+        "reliability_headers": {}
+      },
+      {
+        "query": "What's my current plan details for customer ID CUS-56789?",
+        "status_code": 404,
+        "duration_ms": 23.62203598022461,
+        "response_length": 207,
+        "reliability_headers": {}
+      }
+    ],
+    "summary": {
+      "total_queries": 5,
+      "successful_queries": 0,
+      "success_rate": 0.0,
+      "min_duration_ms": 23.62203598022461,
+      "max_duration_ms": 45.530080795288086,
+      "avg_duration_ms": 36.84959411621094,
+      "median_duration_ms": 39.277076721191406,
+      "p95_duration_ms": 45.530080795288086
+    }
+  },
+  "summary": {
+    "total_queries": 15,
+    "successful_queries": 0,
+    "success_rate": 0.0,
+    "min_duration_ms": 17.314910888671875,
+    "max_duration_ms": 1217.235803604126,
+    "avg_duration_ms": 185.2259635925293,
+    "median_duration_ms": 34.379005432128906,
+    "p95_duration_ms": 1217.235803604126
+  }
+}
