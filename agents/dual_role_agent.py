@@ -2,11 +2,13 @@
 Dual-role agent implementation for handling both sales and support queries.
 """
 import os
+import uuid
 from typing import Dict, List, Any, Optional
-from langchain.agents import Tool, AgentExecutor, initialize_agent, AgentType
-from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool, Tool
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.prebuilt import create_react_agent
 
 # Import agent prompts
 from agent_prompts import get_system_prompt
@@ -37,22 +39,23 @@ class DualRoleAgent:
             tools_config: Dictionary mapping roles to their respective tools
         """
         self.tools_config = tools_config
-        self.agent_executors = {}
+        self.agent_graphs = {}
+        self.memory = MemorySaver()
         
-        # Initialize agent executors for each role
+        # Initialize agent graphs for each role
         for role, tools in tools_config.items():
-            self.agent_executors[role] = self._create_agent_executor(role, tools)
+            self.agent_graphs[role] = self._create_agent_graph(role, tools)
     
-    def _create_agent_executor(self, role: str, tools: List[Tool]) -> AgentExecutor:
+    def _create_agent_graph(self, role: str, tools: List[BaseTool]):
         """
-        Create an agent executor for a specific role.
+        Create an agent graph for a specific role.
         
         Args:
             role: The role for the agent ("sales" or "support")
             tools: List of tools available to the agent
             
         Returns:
-            An initialized AgentExecutor
+            An initialized LangGraph agent
         """
         # Create default context data with just the role
         default_context_data = {
@@ -66,22 +69,12 @@ class DualRoleAgent:
         # Get the appropriate system prompt based on the role
         system_prompt = get_system_prompt(role, default_context_data)
         
-        # Create a memory buffer for the conversation
-        memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # Create and return the agent executor
-        return initialize_agent(
+        # Create and return the agent graph
+        return create_react_agent(
+            llm,
             tools=tools,
-            llm=llm,
-            agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
-            verbose=True,
-            memory=memory,
-            agent_kwargs={
-                "system_message": system_prompt
-            }
+            prompt=system_prompt,
+            checkpointer=self.memory,
         )
     
     def process_message(self, message: str, role: str, context_data: Optional[Dict] = None) -> str:
@@ -96,11 +89,11 @@ class DualRoleAgent:
         Returns:
             The agent's response
         """
-        if role not in self.agent_executors:
-            raise ValueError(f"Invalid role: {role}. Must be one of: {list(self.agent_executors.keys())}")
+        if role not in self.agent_graphs:
+            raise ValueError(f"Invalid role: {role}. Must be one of: {list(self.agent_graphs.keys())}")
         
-        # Get the agent executor for the specified role
-        agent_executor = self.agent_executors[role]
+        # Get the agent graph for the specified role
+        agent_graph = self.agent_graphs[role]
         
         # Update the system prompt with context data if provided
         if context_data:
@@ -116,12 +109,57 @@ class DualRoleAgent:
                 
             # Update the system prompt
             system_prompt = get_system_prompt(role, context_data)
-            agent_executor.agent.llm_chain.prompt.messages[0] = SystemMessage(content=system_prompt)
+            
+            # Create a unique thread ID for this conversation
+            thread_id = str(uuid.uuid4())
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            # Create a human message from the input
+            input_message = HumanMessage(content=message)
+            
+            # Process the message
+            try:
+                # Stream the response and get the last message
+                response_messages = []
+                for event in agent_graph.stream(
+                    {"messages": [input_message]}, 
+                    config, 
+                    stream_mode="values"
+                ):
+                    response_messages = event["messages"]
+                
+                # Return the content of the last message
+                if response_messages and len(response_messages) > 0:
+                    return response_messages[-1].content
+                else:
+                    return "I'm sorry, I couldn't process your request."
+            except Exception as e:
+                print(f"Error processing message with {role} agent: {str(e)}")
+                return f"I'm sorry, I encountered an error while processing your request. Please try again or contact customer support for assistance."
         
-        # Process the message and return the response
+        # If no context data is provided, use a simpler approach
         try:
-            response = agent_executor.run(input=message)
-            return response
+            # Create a unique thread ID for this conversation
+            thread_id = str(uuid.uuid4())
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            # Create a human message from the input
+            input_message = HumanMessage(content=message)
+            
+            # Process the message
+            response_messages = []
+            for event in agent_graph.stream(
+                {"messages": [input_message]}, 
+                config, 
+                stream_mode="values"
+            ):
+                response_messages = event["messages"]
+            
+            # Return the content of the last message
+            if response_messages and len(response_messages) > 0:
+                return response_messages[-1].content
+            else:
+                return "I'm sorry, I couldn't process your request."
         except Exception as e:
             print(f"Error processing message with {role} agent: {str(e)}")
             return f"I'm sorry, I encountered an error while processing your request. Please try again or contact customer support for assistance."
