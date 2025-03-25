@@ -50,25 +50,46 @@ This guide will help you deploy your LangChain agent that integrates with Chatwo
 
 ### API Reply Mechanism
 
-The system sends replies to Chatwoot conversations using the following process:
+The integration uses Chatwoot's API to send replies back to conversations. Here's how it works:
 
-1. When a webhook is received, the message content and conversation ID are extracted
+1. When a webhook is received, the system extracts the conversation ID and message content
 2. The message is processed by the LangChain agent to generate a response
-3. The response is sent back to the Chatwoot conversation using the Chatwoot API
-4. If the API call fails, the system will automatically retry with exponential backoff
-5. All API calls are logged with metrics for monitoring and debugging
+3. The response is sent back to the conversation using the Chatwoot API
+4. The system includes retry logic for API calls with exponential backoff
+5. Failures are logged and metrics are collected for monitoring
 
-### Testing Webhook Connectivity
+### Testing Webhook Functionality
 
-To verify your webhook is properly configured:
+To test the webhook functionality without setting up a public endpoint:
 
-1. Start a conversation in Chatwoot with a test message
-2. Check your application logs for webhook receipt confirmation
-3. Verify the agent responds appropriately in the Chatwoot conversation
-4. If responses aren't appearing, check:
-   - Your Chatwoot API key and account ID in the `.env` file
-   - Network connectivity between your server and Chatwoot
-   - Application logs for any error messages
+1. Use the included test script:
+   ```bash
+   python test_chatwoot_simple.py
+   ```
+
+2. This script simulates webhook events and tests the processing logic
+3. It runs in test mode, so no actual API calls are made to external services
+4. You can modify the test data in the script to test different scenarios
+
+### Reliability Features
+
+The integration includes several reliability features to ensure robust operation:
+
+1. **Structured Logging**: All operations are logged with structured data for easier debugging and monitoring
+2. **Circuit Breakers**: Prevent cascading failures if external APIs become unavailable
+3. **Rate Limiting**: Protect against API rate limits for all external services
+4. **Retry Logic**: Automatically retry failed API calls with exponential backoff
+5. **Metrics Collection**: Track performance and error rates for all operations
+6. **Anomaly Detection**: Alert on unusual patterns in request rates, error rates, and latency
+7. **Semantic Caching**: Reduce API calls and improve response times for similar queries
+
+To test the reliability features:
+
+```bash
+python test_reliability.py
+```
+
+This script tests the circuit breaker and rate limiting functionality.
 
 ## Step 3: Test Locally
 
