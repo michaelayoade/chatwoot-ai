@@ -109,6 +109,113 @@ To add a new tool to the agent:
 
 The role detection logic is implemented in the `ConversationContextManager` class in `conversation_context.py`. You can customize the detection by modifying the `detect_role` method.
 
+## Production Deployment
+
+For production deployment, we use Docker to containerize the application. Follow these steps to deploy:
+
+### Docker Deployment
+
+1. Build the Docker image:
+   ```bash
+   docker build -t chatwoot-langchain .
+   ```
+
+2. Run the container:
+   ```bash
+   docker run -p 5000:5000 --env-file .env chatwoot-langchain
+   ```
+
+### Docker Compose Deployment
+
+For a more complete setup with proper restart policies and volume mounting:
+
+1. Deploy using docker-compose:
+   ```bash
+   docker-compose up -d
+   ```
+
+2. Check the logs:
+   ```bash
+   docker-compose logs -f
+   ```
+
+### Team Collaboration
+
+We follow the GitFlow branching strategy:
+
+1. `main` branch: Production-ready code
+2. `develop` branch: Main development branch
+3. `feature/*` branches: For new features
+4. `bugfix/*` branches: For bug fixes
+5. `hotfix/*` branches: For critical production fixes
+6. `release/*` branches: For preparing releases
+
+When working on a new feature or fix:
+
+1. Create a new branch from `develop`:
+   ```bash
+   git checkout develop
+   git pull
+   git checkout -b feature/your-feature-name
+   ```
+
+2. Make your changes and commit them:
+   ```bash
+   git add .
+   git commit -m "Description of your changes"
+   ```
+
+3. Push your branch and create a pull request to `develop`:
+   ```bash
+   git push -u origin feature/your-feature-name
+   ```
+
+4. After code review and approval, merge your pull request into `develop`
+
+## Performance Testing
+
+To test the performance of the application in a production-like environment:
+
+### Setup Performance Testing Environment
+
+1. Create a `.env.perf` file with your performance testing configuration
+2. Deploy the performance testing environment:
+   ```bash
+   docker-compose -f docker-compose.yml -f docker-compose.perf.yml up -d
+   ```
+
+### Running Load Tests
+
+1. Access the Locust web interface at http://localhost:8089
+2. Configure the number of users and spawn rate
+3. Start the test and monitor the results
+
+### Monitoring Performance
+
+1. Access Grafana at http://localhost:3000 (default credentials: admin/admin)
+2. Configure dashboards to monitor:
+   - Response times
+   - Throughput
+   - Error rates
+   - CPU and memory usage
+
+### Performance Test Reports
+
+After running performance tests, create a report using the template in the `deployment-guide.md` file, including:
+
+1. Test configuration details
+2. Performance metrics
+3. Observations and recommendations
+
+## CI/CD Integration
+
+The repository includes GitHub Actions workflows for:
+
+1. Automated testing on pushes to `main` and `develop` branches
+2. Automated testing on pull requests to `main` and `develop`
+
+To view the workflow configurations, check the `.github/workflows` directory.
+
 ## Production Considerations
 
 When deploying to production:
@@ -118,6 +225,11 @@ When deploying to production:
 3. Add authentication to the API endpoints
 4. Set up monitoring and logging
 5. Consider implementing rate limiting for the OpenAI API calls
+6. Use a reverse proxy like Nginx for SSL termination and load balancing
+
+## Troubleshooting
+
+For common issues and their solutions, refer to the "Troubleshooting Common Issues" section in the `deployment-guide.md` file.
 
 ## License
 

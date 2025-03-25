@@ -154,7 +154,142 @@ heroku config:set $(cat .env)
    
 3. Set environment variables through the AWS Console or CLI
 
-## Step 5: Monitor and Maintain
+## Step 5: Team Collaboration and Performance Testing
+
+### Setting Up for Team Collaboration
+
+1. Share the repository with your team:
+   ```bash
+   # Clone the repository
+   git clone https://github.com/michaelayoade/chatwoot-ai.git
+   cd chatwoot-ai
+   
+   # Create a new branch for your work
+   git checkout -b feature/your-feature-name
+   ```
+
+2. Follow the GitFlow branching strategy:
+   - `main` branch: Production-ready code
+   - `develop` branch: Main development branch
+   - `feature/*` branches: For new features
+   - `bugfix/*` branches: For bug fixes
+   - `hotfix/*` branches: For critical production fixes
+   - `release/*` branches: For preparing releases
+
+3. Create a shared development environment:
+   ```bash
+   # Deploy the develop branch to a staging server
+   git checkout develop
+   # Follow the deployment steps above but use a separate staging environment
+   ```
+
+### Performance Testing
+
+1. Set up a performance testing environment:
+   ```bash
+   # Deploy a separate instance for performance testing
+   docker-compose -f docker-compose.yml -f docker-compose.perf.yml up -d
+   ```
+
+2. Use a load testing tool like Locust or Apache JMeter to simulate multiple users:
+   ```bash
+   # Install Locust
+   pip install locust
+   
+   # Create a locustfile.py with test scenarios
+   # Run Locust
+   locust -f locustfile.py
+   ```
+
+3. Key metrics to monitor:
+   - Response time: Average time to respond to user queries
+   - Throughput: Number of queries processed per minute
+   - Error rate: Percentage of failed requests
+   - CPU/Memory usage: Resource utilization during peak loads
+
+4. Create a performance testing report template:
+   ```markdown
+   # Performance Test Report
+   
+   ## Test Configuration
+   - Date: YYYY-MM-DD
+   - Environment: [Staging/Production]
+   - Number of simulated users: X
+   - Test duration: Y minutes
+   
+   ## Results
+   - Average response time: Z ms
+   - Throughput: X requests/minute
+   - Error rate: Y%
+   - Peak memory usage: Z MB
+   
+   ## Observations and Recommendations
+   - [Add your observations here]
+   - [Add your recommendations here]
+   ```
+
+## Step 6: CI/CD Integration
+
+1. GitHub Actions workflow is already set up for testing:
+   - Tests run automatically on pushes to `main` and `develop` branches
+   - Tests run on pull requests targeting `main` and `develop` branches
+
+2. Extend the workflow for continuous deployment:
+   ```yaml
+   # Add to .github/workflows/deploy.yml
+   name: Deploy to Production
+   
+   on:
+     push:
+       branches: [ main ]
+   
+   jobs:
+     deploy:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v3
+         
+         - name: Build and push Docker image
+           uses: docker/build-push-action@v2
+           with:
+             context: .
+             push: true
+             tags: your-registry.example.com/chatwoot-langchain:latest
+         
+         - name: Deploy to production
+           run: |
+             # Add your deployment commands here
+             # For example, SSH into your server and pull the latest image
+   ```
+
+3. Set up automatic deployment to staging for the develop branch:
+   ```yaml
+   # Add to .github/workflows/deploy-staging.yml
+   name: Deploy to Staging
+   
+   on:
+     push:
+       branches: [ develop ]
+   
+   jobs:
+     deploy:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v3
+         
+         - name: Build and push Docker image
+           uses: docker/build-push-action@v2
+           with:
+             context: .
+             push: true
+             tags: your-registry.example.com/chatwoot-langchain:staging
+         
+         - name: Deploy to staging
+           run: |
+             # Add your staging deployment commands here
+   ```
+
+## Step 7: Monitor and Maintain
 
 1. Set up logging to monitor the application:
    ```python
@@ -165,6 +300,11 @@ heroku config:set $(cat .env)
 2. Consider implementing a more robust error handling and retry mechanism for API calls
 
 3. Regularly review the conversations to ensure the agent is providing accurate responses
+
+4. Set up monitoring and alerting:
+   - Use Prometheus and Grafana for metrics visualization
+   - Set up alerts for high error rates or response times
+   - Monitor OpenAI API usage to control costs
 
 ## Advanced Customization
 
@@ -178,3 +318,12 @@ heroku config:set $(cat .env)
 
 1. Add JWT or OAuth authentication to the webhook endpoint
 2. Implement rate limiting
+3. Set up IP allowlisting for your webhook endpoints
+4. Regularly rotate API keys and credentials
+
+## Troubleshooting Common Issues
+
+1. **OpenAI API errors**: Check your API key and ensure you have sufficient credits
+2. **Webhook not receiving events**: Verify the webhook URL is correctly configured in Chatwoot
+3. **Agent not responding correctly**: Review the system prompts and ensure all tools are functioning
+4. **High latency**: Check network connectivity to external APIs and consider caching frequently accessed data
