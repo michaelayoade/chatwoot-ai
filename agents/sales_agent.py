@@ -5,9 +5,19 @@ import os
 import time
 import uuid
 import re
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Mapping, Union
 import hashlib
 import json
+import sys
+from langchain_core.language_models.base import BaseLanguageModel
+from langchain_core.messages import BaseMessage
+from langchain_core.callbacks.manager import (
+    CallbackManagerForLLMRun,
+    AsyncCallbackManagerForLLMRun,
+    Callbacks
+)
+from langchain_core.outputs import LLMResult
+from langchain_core.prompts import BasePromptTemplate
 
 from langchain_deepseek import ChatDeepSeek
 from langchain.agents import AgentExecutor, create_openai_tools_agent
@@ -18,34 +28,46 @@ from logger_config import logger
 from prometheus_metrics import track_request
 from semantic_cache import semantic_cache
 
-# Check if we're in test mode
-TEST_MODE = (
-    os.getenv("TEST_MODE", "").lower() == "true" or
-    os.getenv("DEEPSEEK_API_KEY") in [None, "", "your_deepseek_api_key"]
+# Check if we're in a testing environment
+testing_mode = (
+    'unittest' in sys.modules or
+    'pytest' in sys.modules or
+    os.environ.get('TESTING', 'False').lower() in ('true', '1', 't') or
+    os.environ.get('CI', 'False').lower() in ('true', '1', 't')
 )
 
-if 'UNITTEST_RUN' in os.environ or os.environ.get('TESTING', 'False').lower() == 'true':
-    # Use a mock LLM for testing
-    from unittest.mock import MagicMock
-    
-    class MockLLM(MagicMock):
-        def generate(self, *args, **kwargs):
-            return "This is a mock response"
-    
-    llm = MockLLM()
-else:
-    # Use the real LLM for production
-    model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
-    # Remove 'Bearer ' prefix if present
-    if deepseek_api_key.startswith("Bearer "):
-        deepseek_api_key = deepseek_api_key[7:]
+# Import other requirements
+from langchain.tools import BaseTool
+from langchain.prompts import PromptTemplate
 
-    llm = ChatDeepSeek(
-        api_key=deepseek_api_key,
-        temperature=0.3,
-        model_name=model_name
-    )
+# Create a function to get the LLM
+def get_llm():
+    if testing_mode:
+        from unittest.mock import MagicMock
+        
+        # Create a base mock that handles any method call
+        mock_llm = MagicMock()
+        
+        # Specify only the methods we know are directly called
+        mock_llm.invoke.return_value = "This is a mock response from the LLM"
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.bind.return_value = mock_llm
+        
+        # Add any other specific method behaviors needed
+        mock_llm._llm_type = "mock"
+        
+        return mock_llm
+    else:
+        from langchain_deepseek.chat_models import ChatDeepSeek
+        
+        return ChatDeepSeek(
+            api_key=os.environ.get('DEEPSEEK_API_KEY', ''),
+            temperature=0.7,
+            model_name="deepseek-chat",
+            model_kwargs={}
+        )
+
+llm = get_llm()
 
 class SalesAgent:
     """Agent that handles sales queries."""
@@ -240,7 +262,7 @@ class SalesAgent:
         
         Return a sales suggestion if appropriate, or empty string if not."""
         
-        response = llm.generate(prompt.format(message=message))
+        response = llm.invoke(prompt.format(message=message))
         return response if response else None
     
     def extract_entity_ids(self, message: str) -> Dict[str, str]:

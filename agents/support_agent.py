@@ -5,11 +5,11 @@ import os
 import time
 import uuid
 import re
-from typing import Dict, List, Any, Optional, Tuple
+import sys
+from typing import Dict, List, Any, Optional, Tuple, Mapping, Union
 import hashlib
 import json
 
-from langchain_deepseek import ChatDeepSeek
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -18,24 +18,48 @@ from logger_config import logger
 from prometheus_metrics import track_request
 from semantic_cache import semantic_cache
 
-# Check if we're in test mode
-TEST_MODE = (
-    os.getenv("TEST_MODE", "").lower() == "true" or
-    os.getenv("DEEPSEEK_API_KEY") in [None, "", "your_deepseek_api_key"]
+# Check if we're in a testing environment
+testing_mode = (
+    'unittest' in sys.modules or
+    'pytest' in sys.modules or
+    os.environ.get('TESTING', 'False').lower() in ('true', '1', 't') or
+    os.environ.get('CI', 'False').lower() in ('true', '1', 't')
 )
 
-# Initialize Deepseek
-model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
-# Remove 'Bearer ' prefix if present
-if deepseek_api_key.startswith("Bearer "):
-    deepseek_api_key = deepseek_api_key[7:]
+# Create a function to get the LLM
+def get_llm():
+    if testing_mode:
+        from unittest.mock import MagicMock
+        
+        # Create a base mock that handles any method call
+        mock_llm = MagicMock()
+        
+        # Specify only the methods we know are directly called
+        mock_llm.invoke.return_value = "This is a mock response from the LLM"
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.bind.return_value = mock_llm
+        
+        # Add any other specific method behaviors needed
+        mock_llm._llm_type = "mock"
+        
+        return mock_llm
+    else:
+        from langchain_deepseek import ChatDeepSeek
+        
+        model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        # Remove 'Bearer ' prefix if present
+        if deepseek_api_key.startswith("Bearer "):
+            deepseek_api_key = deepseek_api_key[7:]
+        
+        return ChatDeepSeek(
+            api_key=deepseek_api_key,
+            temperature=0.3,
+            model_name=model_name
+        )
 
-llm = ChatDeepSeek(
-    api_key=deepseek_api_key,
-    temperature=0.3,
-    model_name=model_name
-)
+# Initialize the LLM
+llm = get_llm()
 
 class SupportAgent:
     """Agent that handles support queries."""
