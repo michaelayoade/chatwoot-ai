@@ -30,7 +30,7 @@ docker-compose.yml
 .dockerignore
 
 # Ignore environment files
-.env*
+#.env*
 !.env.example
 
 # Ignore data and logs

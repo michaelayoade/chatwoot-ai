@@ -21,7 +21,9 @@ wheels/
 *.egg
 
 # Environment variables
-.env
+# Ignore environment files
+.env*
+!.env.example
 .venv
 env/
 venv/

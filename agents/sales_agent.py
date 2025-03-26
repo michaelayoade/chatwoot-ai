@@ -24,18 +24,28 @@ TEST_MODE = (
     os.getenv("DEEPSEEK_API_KEY") in [None, "", "your_deepseek_api_key"]
 )
 
-# Initialize Deepseek
-model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
-# Remove 'Bearer ' prefix if present
-if deepseek_api_key.startswith("Bearer "):
-    deepseek_api_key = deepseek_api_key[7:]
+if 'UNITTEST_RUN' in os.environ or os.environ.get('TESTING', 'False').lower() == 'true':
+    # Use a mock LLM for testing
+    from unittest.mock import MagicMock
+    
+    class MockLLM(MagicMock):
+        def generate(self, *args, **kwargs):
+            return "This is a mock response"
+    
+    llm = MockLLM()
+else:
+    # Use the real LLM for production
+    model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    # Remove 'Bearer ' prefix if present
+    if deepseek_api_key.startswith("Bearer "):
+        deepseek_api_key = deepseek_api_key[7:]
 
-llm = ChatDeepSeek(
-    api_key=deepseek_api_key,
-    temperature=0.3,
-    model_name=model_name
-)
+    llm = ChatDeepSeek(
+        api_key=deepseek_api_key,
+        temperature=0.3,
+        model_name=model_name
+    )
 
 class SalesAgent:
     """Agent that handles sales queries."""
@@ -230,7 +240,7 @@ class SalesAgent:
         
         Return a sales suggestion if appropriate, or empty string if not."""
         
-        response = self.llm.generate(prompt.format(message=message))
+        response = llm.generate(prompt.format(message=message))
         return response if response else None
     
     def extract_entity_ids(self, message: str) -> Dict[str, str]:
