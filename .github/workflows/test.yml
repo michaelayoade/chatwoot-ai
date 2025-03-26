@@ -24,9 +24,11 @@ jobs:
         pip install -r requirements.txt
         pip install coverage
         
-    - name: Run tests
+    - name: Run tests with coverage (unittest)
       run: |
-        coverage run -m run_tests.py
+        coverage run -m unittest discover -s tests -p "*.py"
+        coverage report
+        coverage xml
       env:
         TEST_MODE: "true"
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
