@@ -22,6 +22,7 @@ from logger_config import logger, llm_metrics
 from reliability import LLMReliabilityWrapper
 from prometheus_metrics import track_request, track_conversation
 from semantic_cache import semantic_cache
+from intent_classifier import IntentClassifier
 
 # Check if we're in test mode
 TEST_MODE = (
@@ -62,6 +63,7 @@ class DualRoleAgent:
         """
         self.tools_config = tools_config
         self.agent_graphs = {}
+        self.intent_classifier = IntentClassifier()
         
         # Initialize agent graphs for each role
         for role, tools in tools_config.items():
@@ -151,18 +153,23 @@ class DualRoleAgent:
             # Update with string entities
             context_data["entities"].update(string_entity_ids)
         
-        # Check if role is valid
-        if role not in self.agent_graphs:
-            error_msg = f"Invalid role: {role}. Must be one of: {list(self.agent_graphs.keys())}"
-            logger.error(
-                "invalid_role",
-                conversation_id=conversation_id,
-                role=role,
-                valid_roles=list(self.agent_graphs.keys())
-            )
-            track_conversation("failed")
-            return error_msg, metadata
+        # Classify intent
+        classification = self.intent_classifier.classify_intent(message)
         
+        # Handle primary intent
+        if classification['classification'] == 'sales':
+            response = self._handle_sales(message, role, context_data)
+        elif classification['classification'] == 'support':
+            response = self._handle_support(message, role, context_data)
+        else:
+            response = self._default_response(message, role, context_data)
+            
+        # Check for cross-intent opportunities
+        if classification['classification'] == 'support' and classification['scores']['sales'] > 0.3:
+            sales_response = self._detect_sales_opportunity(message, role, context_data)
+            if sales_response:
+                response += "\n\nBy the way, " + sales_response
+                
         # Check if we can use semantic cache for this query
         cache_key = f"{role}:{message}"
         if context_data:
@@ -279,6 +286,238 @@ class DualRoleAgent:
             
             # Return error message
             return f"I'm sorry, but I encountered an error while processing your request: {str(e)}", metadata
+    
+    def _handle_sales(self, message: str, role: str, context_data: Optional[Dict] = None) -> str:
+        # Existing sales handling code
+        # Start tracking the request
+        start_time = time.time()
+        conversation_id = context_data.get("conversation_id", str(uuid.uuid4())) if context_data else str(uuid.uuid4())
+        
+        # Initialize metadata
+        metadata = {
+            "conversation_id": conversation_id,
+            "role": role,
+            "message_length": len(message),
+            "timestamp": time.time()
+        }
+        
+        # Prepare the input for the agent
+        agent_input = {"input": message}
+        
+        # Add context data if available
+        if context_data:
+            # Ensure all values in context_data are strings to avoid serialization issues
+            safe_context = {}
+            for k, v in context_data.items():
+                if isinstance(v, dict):
+                    # Handle nested dictionaries
+                    safe_context[k] = {str(inner_k): str(inner_v) for inner_k, inner_v in v.items()}
+                else:
+                    safe_context[k] = str(v) if v is not None else ""
+            
+            agent_input["context"] = safe_context
+        
+        try:
+            # Call the agent
+            agent_response = self.agent_graphs[role].invoke(agent_input)
+            
+            # Extract the response
+            response = agent_response.get("output", "I'm sorry, but I couldn't process your request.")
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            return response
+            
+        except Exception as e:
+            # Log error
+            logger.error(
+                "agent_error",
+                conversation_id=conversation_id,
+                role=role,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            # Return error message
+            return f"I'm sorry, but I encountered an error while processing your request: {str(e)}"
+    
+    def _handle_support(self, message: str, role: str, context_data: Optional[Dict] = None) -> str:
+        # Existing support handling code
+        # Start tracking the request
+        start_time = time.time()
+        conversation_id = context_data.get("conversation_id", str(uuid.uuid4())) if context_data else str(uuid.uuid4())
+        
+        # Initialize metadata
+        metadata = {
+            "conversation_id": conversation_id,
+            "role": role,
+            "message_length": len(message),
+            "timestamp": time.time()
+        }
+        
+        # Prepare the input for the agent
+        agent_input = {"input": message}
+        
+        # Add context data if available
+        if context_data:
+            # Ensure all values in context_data are strings to avoid serialization issues
+            safe_context = {}
+            for k, v in context_data.items():
+                if isinstance(v, dict):
+                    # Handle nested dictionaries
+                    safe_context[k] = {str(inner_k): str(inner_v) for inner_k, inner_v in v.items()}
+                else:
+                    safe_context[k] = str(v) if v is not None else ""
+            
+            agent_input["context"] = safe_context
+        
+        try:
+            # Call the agent
+            agent_response = self.agent_graphs[role].invoke(agent_input)
+            
+            # Extract the response
+            response = agent_response.get("output", "I'm sorry, but I couldn't process your request.")
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            return response
+            
+        except Exception as e:
+            # Log error
+            logger.error(
+                "agent_error",
+                conversation_id=conversation_id,
+                role=role,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            # Return error message
+            return f"I'm sorry, but I encountered an error while processing your request: {str(e)}"
+    
+    def _default_response(self, message: str, role: str, context_data: Optional[Dict] = None) -> str:
+        # Existing default response code
+        # Start tracking the request
+        start_time = time.time()
+        conversation_id = context_data.get("conversation_id", str(uuid.uuid4())) if context_data else str(uuid.uuid4())
+        
+        # Initialize metadata
+        metadata = {
+            "conversation_id": conversation_id,
+            "role": role,
+            "message_length": len(message),
+            "timestamp": time.time()
+        }
+        
+        # Prepare the input for the agent
+        agent_input = {"input": message}
+        
+        # Add context data if available
+        if context_data:
+            # Ensure all values in context_data are strings to avoid serialization issues
+            safe_context = {}
+            for k, v in context_data.items():
+                if isinstance(v, dict):
+                    # Handle nested dictionaries
+                    safe_context[k] = {str(inner_k): str(inner_v) for inner_k, inner_v in v.items()}
+                else:
+                    safe_context[k] = str(v) if v is not None else ""
+            
+            agent_input["context"] = safe_context
+        
+        try:
+            # Call the agent
+            agent_response = self.agent_graphs[role].invoke(agent_input)
+            
+            # Extract the response
+            response = agent_response.get("output", "I'm sorry, but I couldn't process your request.")
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            return response
+            
+        except Exception as e:
+            # Log error
+            logger.error(
+                "agent_error",
+                conversation_id=conversation_id,
+                role=role,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            # Return error message
+            return f"I'm sorry, but I encountered an error while processing your request: {str(e)}"
+    
+    def _detect_sales_opportunity(self, message: str, role: str, context_data: Optional[Dict] = None) -> str:
+        # Detect sales opportunity
+        # Start tracking the request
+        start_time = time.time()
+        conversation_id = context_data.get("conversation_id", str(uuid.uuid4())) if context_data else str(uuid.uuid4())
+        
+        # Initialize metadata
+        metadata = {
+            "conversation_id": conversation_id,
+            "role": role,
+            "message_length": len(message),
+            "timestamp": time.time()
+        }
+        
+        # Prepare the input for the agent
+        agent_input = {"input": message}
+        
+        # Add context data if available
+        if context_data:
+            # Ensure all values in context_data are strings to avoid serialization issues
+            safe_context = {}
+            for k, v in context_data.items():
+                if isinstance(v, dict):
+                    # Handle nested dictionaries
+                    safe_context[k] = {str(inner_k): str(inner_v) for inner_k, inner_v in v.items()}
+                else:
+                    safe_context[k] = str(v) if v is not None else ""
+            
+            agent_input["context"] = safe_context
+        
+        try:
+            # Call the agent
+            agent_response = self.agent_graphs[role].invoke(agent_input)
+            
+            # Extract the response
+            response = agent_response.get("output", "I'm sorry, but I couldn't process your request.")
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            return response
+            
+        except Exception as e:
+            # Log error
+            logger.error(
+                "agent_error",
+                conversation_id=conversation_id,
+                role=role,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            # Return error message
+            return f"I'm sorry, but I encountered an error while processing your request: {str(e)}"
     
     def extract_entity_ids(self, message: str) -> Dict[str, str]:
         """

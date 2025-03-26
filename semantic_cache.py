@@ -28,11 +28,12 @@ class SemanticCache:
         logger.info("cache_hit", cache=self.name, key=key)
         return entry["value"]
     
-    def set(self, key, value):
+    def set(self, key, value, metadata=None):
         """Set a value in the cache"""
         self.cache[key] = {
             "value": value,
-            "expiry": time.time() + self.ttl
+            "expiry": time.time() + self.ttl,
+            "metadata": metadata
         }
         logger.info("cache_set", cache=self.name, key=key)
         

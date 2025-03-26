@@ -224,6 +224,15 @@ class SalesAgent:
                 "processing_time": duration
             }
     
+    def detect_opportunity(self, message):
+        prompt = """Detect if this support message contains a sales opportunity:
+        Message: {message}
+        
+        Return a sales suggestion if appropriate, or empty string if not."""
+        
+        response = self.llm.generate(prompt.format(message=message))
+        return response if response else None
+    
     def extract_entity_ids(self, message: str) -> Dict[str, str]:
         """
         Extract entity IDs from a message using regex patterns.

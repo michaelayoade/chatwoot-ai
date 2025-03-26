@@ -6,6 +6,10 @@ import json
 import requests
 import time
 from typing import Dict, List, Any, Optional
+import traceback
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Check if we're in test mode
 TEST_MODE = (
@@ -28,45 +32,75 @@ class ChatwootHandler:
             "Content-Type": "application/json"
         }
     
-    def process_webhook(self, webhook_data: Dict) -> Dict:
-        """Process incoming webhook data from Chatwoot"""
-        if not webhook_data:
-            return {"error": "No webhook data provided"}
+    def process_webhook(self, webhook_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process a webhook from Chatwoot.
         
+        Args:
+            webhook_data: The webhook data from Chatwoot
+            
+        Returns:
+            Dictionary with processing result
+        """
         try:
-            # Extract relevant information from the webhook
-            event_type = webhook_data.get("event")
-            if event_type != "message_created":
-                return {"status": "ignored", "reason": f"Event type {event_type} not handled"}
+            print(f"Received Chatwoot webhook: {json.dumps(webhook_data)}...")
             
+            # Check if this is a message event
+            event = webhook_data.get("event")
+            if event != "message_created":
+                return {
+                    "status": "ignored",
+                    "reason": f"Event type '{event}' is not supported"
+                }
+            
+            # Extract message data
             message_data = webhook_data.get("message", {})
-            conversation_id = str(webhook_data.get("conversation", {}).get("id"))
+            conversation_data = webhook_data.get("conversation", {})
             
-            # Check if the message is from a user (not from the agent/bot)
-            if message_data.get("sender", {}).get("type") != "contact":
-                return {"status": "ignored", "reason": "Message not from contact"}
+            # Check if this is a message from a contact (not from the bot)
+            sender = message_data.get("sender", {})
+            if sender.get("type") != "contact":
+                return {
+                    "status": "ignored",
+                    "reason": "Message is not from a contact"
+                }
             
-            # Extract the message content
-            message_content = message_data.get("content")
-            if not message_content:
-                return {"status": "ignored", "reason": "Empty message content"}
+            # Extract message content and conversation ID
+            message_content = message_data.get("content", "")
+            conversation_id = str(conversation_data.get("id", ""))
             
             # Get conversation history
-            history = self.get_conversation_history(conversation_id)
+            try:
+                history = self.get_conversation_history(conversation_id)
+                print(f"[TEST MODE] Getting history for conversation {conversation_id}")
+            except Exception as e:
+                print(f"Error getting conversation history: {str(e)}")
+                history = []
             
-            # Update the conversation context
-            if self.context_manager:
-                self.context_manager.update_context(conversation_id, message_content, history)
+            # Process the message
+            try:
+                # Import here to avoid circular imports
+                from langchain_integration import process_message
+                response = process_message(
+                    message_content, 
+                    conversation_id,
+                    self.context_manager
+                )
+            except Exception as e:
+                print(f"Error processing message: {str(e)}")
+                print(f"Traceback: {traceback.format_exc()}")
+                response = "I'm sorry, but I encountered an error while processing your request. Please try again or contact customer support for assistance."
             
-            # Process the message using the agent
-            from langchain_integration import process_message
-            response = process_message(message_content, conversation_id, self.context_manager)
-            
-            # Send the response back to the conversation via Chatwoot API
-            reply_result = self.send_message(conversation_id, response)
-            
-            # Log the successful processing
-            print(f"Processed webhook for conversation {conversation_id}. Message: '{message_content}', Response: '{response}'")
+            # Send the response back to Chatwoot
+            try:
+                reply_result = self.send_message(conversation_id, response)
+                print(f"Processed webhook for conversation {conversation_id}. Message: '{message_content}', Response: '{response}'")
+            except Exception as e:
+                print(f"Error sending message to Chatwoot: {str(e)}")
+                reply_result = {
+                    "status": "error",
+                    "message": str(e)
+                }
             
             return {
                 "status": "success",
@@ -75,9 +109,14 @@ class ChatwootHandler:
                 "response": response,
                 "reply_result": reply_result
             }
+            
         except Exception as e:
             print(f"Error processing webhook: {str(e)}")
-            return {"error": f"Failed to process webhook: {str(e)}"}
+            print(f"Traceback: {traceback.format_exc()}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
     
     def send_message(self, conversation_id: str, message: str) -> Dict:
         """Send a message to a Chatwoot conversation"""
@@ -238,6 +277,7 @@ class ChatwootHandler:
     
     def handle_sales_query(self, conversation_id: str, query: str, customer_id: str = None) -> str:
         """Handle a sales-related query using the ERPNext tool"""
+        # Import here to avoid circular imports
         from langchain_integration import process_message
         
         # Tag the conversation as sales
@@ -248,10 +288,15 @@ class ChatwootHandler:
             self.context_manager.set_role(conversation_id, "sales")
         
         response = process_message(query, conversation_id, self.context_manager)
+        
+        # Extract just the response text if it's a tuple (response, metadata)
+        if isinstance(response, tuple) and len(response) == 2:
+            return response[0]
         return response
-    
+
     def handle_support_query(self, conversation_id: str, query: str, customer_id: str = None) -> str:
         """Handle a support-related query using the Splynx and UNMS tools"""
+        # Import here to avoid circular imports
         from langchain_integration import process_message
         
         # Tag the conversation as support
@@ -262,4 +307,8 @@ class ChatwootHandler:
             self.context_manager.set_role(conversation_id, "support")
         
         response = process_message(query, conversation_id, self.context_manager)
+        
+        # Extract just the response text if it's a tuple (response, metadata)
+        if isinstance(response, tuple) and len(response) == 2:
+            return response[0]
         return response

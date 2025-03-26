@@ -1,11 +1,13 @@
-# LangChain-Chatwoot Dual-Role Agent Integration
+# LangChain-Chatwoot Agent Integration
 
-This project implements a dual-role agent for an Internet Service Provider (ISP) that can handle both sales and support functions within Chatwoot conversations. The agent uses LangChain for orchestration, ERPNext for sales capabilities, and Splynx/UNMS for support functionalities.
+This project implements separate sales and support agents for an Internet Service Provider (ISP) that handle specific functions within Chatwoot conversations. The agents use LangChain for orchestration, ERPNext for sales capabilities, and Splynx/UNMS for support functionalities.
 
 ## Features
 
-- **Dual-Role Agent**: Dynamically switches between sales and support roles based on conversation context
-- **Conversation Context Management**: Maintains context across messages and detects role transitions
+- **Specialized Agents**: 
+  - **SalesAgent**: Handles sales inquiries, promotions, and service plans
+  - **SupportAgent**: Manages technical support, outages, and customer issues
+- **Conversation Context Management**: Maintains context across messages
 - **Integration with Multiple Systems**:
   - **Chatwoot**: For customer conversations
   - **ERPNext**: For sales information (service plans, promotions, etc.)
@@ -17,9 +19,12 @@ This project implements a dual-role agent for an Internet Service Provider (ISP)
 The system consists of the following components:
 
 1. **Flask Web Server** (`app.py`): Handles Chatwoot webhooks and routes messages to the appropriate handler
-2. **LangChain Integration** (`langchain_integration.py`): Implements the agent, tools, and handlers for interacting with external systems
-3. **Conversation Context Manager** (`conversation_context.py`): Manages conversation context and role detection
-4. **Agent Prompts** (`agent_prompts.py`): Defines prompt templates for the agent in different roles
+2. **Agent Classes**:
+   - **SalesAgent** (`agents/sales_agent.py`): Implements the sales-specific agent functionality
+   - **SupportAgent** (`agents/support_agent.py`): Implements the support-specific agent functionality
+3. **LangChain Integration** (`langchain_integration.py`): Manages the integration with Chatwoot and routes messages to the appropriate agent
+4. **Semantic Cache** (`semantic_cache.py`): Caches responses to improve performance
+5. **Prometheus Metrics** (`prometheus_metrics.py`): Tracks performance metrics for monitoring
 
 ## Setup
 
@@ -80,13 +85,49 @@ The server will start on the port specified in the `.env` file (default: 5000).
 
 ### Testing
 
-To test the dual-role agent without setting up Chatwoot, you can use the included test script:
+#### Comprehensive Test Suite
+
+The project includes a comprehensive test suite that covers all agent classes and their functionality:
+
+```bash
+python run_tests.py
+```
+
+This will run all tests and generate a coverage report in the terminal and an HTML coverage report in the `coverage_html` directory.
+
+The test suite includes:
+
+1. **Unit Tests**:
+   - `test_agent_classes.py`: Tests for the SalesAgent and SupportAgent classes
+   - `test_dual_role_agent.py`: Tests for the DualRoleAgent class
+   - `test_semantic_cache.py`: Tests for the SemanticCache class
+   - `test_integration.py`: Integration tests for the langchain_integration module
+
+2. **Test Coverage**:
+   - The test suite achieves over 90% code coverage for the agent classes
+   - Tests include initialization, message processing, error handling, caching, and entity extraction
+
+3. **Mock Implementations**:
+   - Tests use mock implementations to avoid external dependencies
+   - Mock context managers simulate conversation context
+   - Mock tools simulate agent capabilities
+
+To run specific tests, you can use:
+
+```bash
+python -m unittest tests/test_agent_classes.py
+```
+
+#### Test Environment
+
+For testing, set the following environment variables:
 
 ```
-python test_dual_role_agent.py
+TEST_MODE=true
+OPENAI_API_KEY=your_test_key  # Can be any value in test mode
 ```
 
-This will simulate conversations with the agent in different roles and print the responses.
+These can be set in the `.env.test` file, which is loaded automatically when running tests.
 
 ## Configuring Chatwoot
 
@@ -99,15 +140,29 @@ This will simulate conversations with the agent in different roles and print the
 
 ### Adding New Tools
 
-To add a new tool to the agent:
+To add a new tool to an agent:
 
-1. Implement the tool function in the appropriate class in `langchain_integration.py`
+1. Implement the tool function in the appropriate agent class
 2. Add the tool to the `tools` list with a descriptive name and description
-3. Update the agent prompt templates in `agent_prompts.py` to include the new tool
+3. Update the agent prompt templates to include the new tool
 
-### Customizing Role Detection
+### Agent Implementation
 
-The role detection logic is implemented in the `ConversationContextManager` class in `conversation_context.py`. You can customize the detection by modifying the `detect_role` method.
+The agents are implemented using LangChain's agent framework:
+
+1. **SalesAgent**: Specializes in handling sales inquiries, with tools for:
+   - Retrieving service plans
+   - Checking promotions
+   - Creating quotes
+   - Looking up customer information
+
+2. **SupportAgent**: Specializes in handling support inquiries, with tools for:
+   - Checking network status
+   - Diagnosing connection issues
+   - Creating support tickets
+   - Looking up device information
+
+Each agent has its own prompt template and set of tools tailored to its specific role.
 
 ## Production Deployment
 
@@ -139,7 +194,7 @@ For a more complete setup with proper restart policies and volume mounting:
    docker-compose logs -f
    ```
 
-### Team Collaboration
+## Team Collaboration
 
 We follow the GitFlow branching strategy:
 

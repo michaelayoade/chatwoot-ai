@@ -164,7 +164,7 @@ class ConversationContextManager:
         context = self.get_conversation_context(conversation_id)
         return context.get("role", "support")
     
-    def update_entities(self, conversation_id: str, entities: Dict[str, str]) -> None:
+    def update_entities(self, conversation_id: str, entities: Dict[str, Any]) -> None:
         """
         Update the entities for a conversation.
         
@@ -177,7 +177,16 @@ class ConversationContextManager:
         if "entities" not in context:
             context["entities"] = {}
         
-        context["entities"].update(entities)
+        for key, value in entities.items():
+            if isinstance(value, dict):
+                # For dictionary values, convert all nested values to strings
+                string_dict = {}
+                for k, v in value.items():
+                    string_dict[k] = str(v)
+                context["entities"][key] = string_dict
+            else:
+                context["entities"][key] = str(value)
+        
         self._save_contexts()
     
     def get_entities(self, conversation_id: str) -> Dict[str, str]:

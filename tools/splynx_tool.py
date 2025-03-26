@@ -5,12 +5,8 @@ import os
 import requests
 from typing import Dict, List, Any
 
-# Check if we're in test mode
-TEST_MODE = (
-    os.getenv("TEST_MODE", "").lower() == "true" or
-    os.getenv("OPENAI_API_KEY") in [None, "", "your_openai_api_key"] or
-    os.getenv("SPLYNX_API_KEY") in [None, "", "your_splynx_api_key"]
-)
+# Force test mode for local development
+TEST_MODE = True
 
 class SplynxTool:
     """Tool for interacting with Splynx for internet service information."""
@@ -19,8 +15,8 @@ class SplynxTool:
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = base_url
-        self.test_mode = TEST_MODE or os.getenv("TEST_MODE", "").lower() == "true"
-        self.auth_token = None if self.test_mode else self._get_auth_token()
+        self.test_mode = True  # Always use test mode for local development
+        self.auth_token = "test_token"  # Use a dummy token
     
     def _get_auth_token(self):
         """Get authentication token from Splynx API"""

@@ -29,12 +29,20 @@ This guide will help you deploy your LangChain agent that integrates with Chatwo
 
 ## Step 2: Configure Chatwoot Webhooks
 
-1. Log in to your Chatwoot admin dashboard
-2. Go to Settings > Integrations > Webhooks
-3. Add a new webhook with the following settings:
-   - URL: `https://your-server-address.com/webhook/chatwoot`
-   - Events to notify: Select at least "Message Created"
-   - Advanced Options: You can optionally add a secret key for additional security
+1. In your Chatwoot account, go to Settings > Integrations > Webhooks
+2. Add a new webhook with the URL of your deployed application (e.g., `https://your-app.com/webhook/chatwoot`)
+3. Select the events you want to trigger the webhook (at minimum, select "Message Created")
+4. Save the webhook configuration
+
+### Webhook Response Handling
+
+The integration handles webhook responses from Chatwoot and processes messages using the LangChain agent. The system has been updated to properly handle response formats:
+
+1. The `process_message` function in `langchain_integration.py` returns a string response instead of a tuple
+2. The `process_webhook` method in `ChatwootHandler` extracts the response text if it receives a tuple (response, metadata)
+3. The Flask app ensures the response is properly formatted before returning it to Chatwoot
+
+These changes ensure that the webhook functionality works correctly and prevents the "unhashable type: 'dict'" error that could occur when processing entity IDs.
 
 ### Important Notes About Chatwoot Webhook Configuration
 
